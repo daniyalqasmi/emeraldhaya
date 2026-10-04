@@ -1,0 +1,180 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "Haute couture abaya catalog item",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 200 },
+        "category": { "type": "string", "maxLength": 100 },
+        "brand": { "type": "string", "maxLength": 100 },
+        "sku": { "type": "string", "maxLength": 50, "pattern": "^[a-zA-Z0-9_-]+$" },
+        "description": { "type": "string", "maxLength": 2000 },
+        "price": { "type": "number" },
+        "discount": { "type": "number" },
+        "stock": { "type": "number" },
+        "color": { "type": "string", "maxLength": 50 },
+        "material": { "type": "string", "maxLength": 100 },
+        "rating": { "type": "number" }
+      },
+      "required": ["name", "category", "sku", "price", "stock"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Customer abaya purchase order placed via WhatsApp",
+      "type": "object",
+      "properties": {
+        "orderNumber": { "type": "string", "maxLength": 50 },
+        "customerName": { "type": "string", "maxLength": 150 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "email": { "type": "string", "maxLength": 150 },
+        "address": { "type": "string", "maxLength": 300 },
+        "city": { "type": "string", "maxLength": 100 },
+        "postalCode": { "type": "string", "maxLength": 30 },
+        "country": { "type": "string", "maxLength": 100 },
+        "subtotal": { "type": "number" },
+        "discount": { "type": "number" },
+        "shipping": { "type": "number" },
+        "total": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "confirmed", "processing", "shipped", "delivered", "cancelled"] }
+      },
+      "required": ["orderNumber", "customerName", "phone", "address", "city", "total", "status"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Abaya collection classification",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 100 },
+        "slug": { "type": "string", "maxLength": 100 },
+        "description": { "type": "string", "maxLength": 500 },
+        "productCount": { "type": "number" }
+      },
+      "required": ["name", "slug"]
+    },
+    "Review": {
+      "title": "Review",
+      "description": "Customer product testimonial",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "string", "maxLength": 64 },
+        "customerName": { "type": "string", "maxLength": 100 },
+        "rating": { "type": "number" },
+        "comment": { "type": "string", "maxLength": 1000 },
+        "isApproved": { "type": "boolean" },
+        "isVerified": { "type": "boolean" }
+      },
+      "required": ["productId", "customerName", "rating", "comment"]
+    },
+    "Coupon": {
+      "title": "Coupon",
+      "description": "Promotional voucher code",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "maxLength": 30 },
+        "discountPercent": { "type": "number" },
+        "minSpend": { "type": "number" },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["code", "discountPercent", "isActive"]
+    },
+    "HeroSlide": {
+      "title": "HeroSlide",
+      "description": "Campaign slider headline on homepage",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 150 },
+        "subtitle": { "type": "string", "maxLength": 100 },
+        "tagline": { "type": "string", "maxLength": 300 },
+        "ctaText": { "type": "string", "maxLength": 50 },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["title", "ctaText", "isActive"]
+    },
+    "StoreSettings": {
+      "title": "StoreSettings",
+      "description": "Global store and concierge configuration",
+      "type": "object",
+      "properties": {
+        "brandName": { "type": "string", "maxLength": 100 },
+        "whatsappNumber": { "type": "string", "maxLength": 30 },
+        "storeEmail": { "type": "string", "maxLength": 100 },
+        "storePhone": { "type": "string", "maxLength": 50 },
+        "freeShippingThreshold": { "type": "number" },
+        "currency": { "type": "string", "enum": ["USD", "AED", "SAR", "GBP", "PKR"] },
+        "googleFormUrl": { "type": "string", "maxLength": 500 },
+        "announcementText": { "type": "string", "maxLength": 300 }
+      },
+      "required": ["brandName", "whatsappNumber"]
+    },
+    "ContactMessage": {
+      "title": "ContactMessage",
+      "description": "Inquiry submitted by client via contact form",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "maxLength": 150 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "subject": { "type": "string", "maxLength": 150 },
+        "message": { "type": "string", "maxLength": 2000 },
+        "isRead": { "type": "boolean" }
+      },
+      "required": ["name", "email", "message"]
+    },
+    "Newsletter": {
+      "title": "Newsletter",
+      "description": "Email subscription record",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "maxLength": 150 }
+      },
+      "required": ["email"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "Product",
+      "description": "Registered customer profiles"
+    },
+    "/admins/{adminId}": {
+      "schema": "Product",
+      "description": "Admin security access records"
+    },
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Bespoke abaya catalog documents"
+    },
+    "/categories/{categoryId}": {
+      "schema": "Category",
+      "description": "Collection classifications"
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "WhatsApp purchase orders"
+    },
+    "/reviews/{reviewId}": {
+      "schema": "Review",
+      "description": "Customer testimonials"
+    },
+    "/coupons/{couponId}": {
+      "schema": "Coupon",
+      "description": "Discount voucher codes"
+    },
+    "/heroSlides/{slideId}": {
+      "schema": "HeroSlide",
+      "description": "Hero campaign slides"
+    },
+    "/settings/store": {
+      "schema": "StoreSettings",
+      "description": "Store configuration and WhatsApp number"
+    },
+    "/contactMessages/{messageId}": {
+      "schema": "ContactMessage",
+      "description": "Inquiries from clients"
+    },
+    "/newsletter/{subscriberId}": {
+      "schema": "Newsletter",
+      "description": "VIP newsletter subscriptions"
+    }
+  }
+}

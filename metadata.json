@@ -1,0 +1,8 @@
+{
+  "name": "Emerald Haya | Luxury Islamic Abaya Haute Couture",
+  "description": "Premium luxury Islamic Abaya fashion brand featuring bespoke Dubai and Saudi collections, hand-embroidered Nida silks, and modern modest couture.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
