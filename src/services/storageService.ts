@@ -21,6 +21,7 @@ import {
   doc, 
   getDoc, 
   setDoc, 
+  deleteDoc,
   collection, 
   getDocs, 
   writeBatch 
@@ -38,7 +39,8 @@ const STORAGE_KEYS = {
   NEWSLETTER: 'emerald_haya_newsletter_v1',
   CART: 'emerald_haya_cart_v1',
   WISHLIST: 'emerald_haya_wishlist_v1',
-  ADMIN_AUTH: 'emerald_haya_admin_session_v1'
+  ADMIN_AUTH: 'emerald_haya_admin_session_v1',
+  LAST_FIREBASE_SYNC: 'emerald_haya_last_firebase_sync'
 };
 
 export const StorageService = {
@@ -53,7 +55,7 @@ export const StorageService = {
     } catch (e) {
       console.error('Error reading products from storage:', e);
     }
-    // Seed initial 150+ products
+    // Seed initial products
     this.saveProducts(SEED_PRODUCTS);
     return SEED_PRODUCTS;
   },
@@ -61,24 +63,55 @@ export const StorageService = {
   saveProducts(products: Product[]): void {
     try {
       localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
-      // Asynchronously sync to Firebase Firestore
+      // Asynchronously sync index to Firebase Firestore
       this.syncProductsToFirestore(products).catch((err) => {
-        console.warn('Firestore products sync background status:', err?.message || err);
+        console.warn('Firestore products sync notice:', err?.message || err);
       });
     } catch (e) {
       console.error('Error saving products:', e);
     }
   },
 
+  async saveSingleProductToFirestore(product: Product): Promise<void> {
+    if (!db) return;
+    try {
+      await setDoc(doc(db, 'products', product.id), {
+        ...product,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+      localStorage.setItem(STORAGE_KEYS.LAST_FIREBASE_SYNC, new Date().toISOString());
+    } catch (e) {
+      console.warn('Firebase Firestore single product sync notice:', e);
+    }
+  },
+
+  async deleteProductFromFirestore(id: string): Promise<void> {
+    if (!db) return;
+    try {
+      await deleteDoc(doc(db, 'products', id));
+      localStorage.setItem(STORAGE_KEYS.LAST_FIREBASE_SYNC, new Date().toISOString());
+    } catch (e) {
+      console.warn('Firebase Firestore delete product notice:', e);
+    }
+  },
+
   async syncProductsToFirestore(products: Product[]): Promise<void> {
     if (!db) return;
     try {
-      // Save top products and catalog index document
+      // Save top products and catalog index document (without oversized payload)
+      const sanitized = products.slice(0, 100).map(p => ({
+        ...p,
+        // If image is a local data url, keep it, but ensure doc doesn't explode
+        images: p.images.slice(0, 2)
+      }));
+
       await setDoc(doc(db, 'catalog', 'all_products'), {
         updatedAt: new Date().toISOString(),
         count: products.length,
-        items: products.slice(0, 150)
+        items: sanitized
       }, { merge: true });
+
+      localStorage.setItem(STORAGE_KEYS.LAST_FIREBASE_SYNC, new Date().toISOString());
     } catch (e) {
       console.warn('Firebase Firestore product sync notice:', e);
     }
@@ -204,12 +237,18 @@ export const StorageService = {
   saveSettings(settings: StoreSettings): void {
     try {
       localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
-      // Asynchronously sync to Firebase Firestore
+      // Asynchronously sync to Firebase Firestore across both config documents
       if (db) {
-        setDoc(doc(db, 'settings', 'general'), {
+        const payload = {
           ...settings,
           updatedAt: new Date().toISOString()
-        }, { merge: true }).catch((err) => {
+        };
+        Promise.all([
+          setDoc(doc(db, 'settings', 'general'), payload, { merge: true }),
+          setDoc(doc(db, 'settings', 'store'), payload, { merge: true })
+        ]).then(() => {
+          localStorage.setItem(STORAGE_KEYS.LAST_FIREBASE_SYNC, new Date().toISOString());
+        }).catch((err) => {
           console.warn('Firestore settings sync notice:', err);
         });
       }
@@ -238,7 +277,9 @@ export const StorageService = {
         setDoc(doc(db, 'content', 'heroSlides'), {
           slides,
           updatedAt: new Date().toISOString()
-        }, { merge: true }).catch((err) => {
+        }, { merge: true }).then(() => {
+          localStorage.setItem(STORAGE_KEYS.LAST_FIREBASE_SYNC, new Date().toISOString());
+        }).catch((err) => {
           console.warn('Firestore hero slides sync notice:', err);
         });
       }
@@ -338,6 +379,64 @@ export const StorageService = {
     }
   },
 
+  // Full manual or triggered backup to Firebase
+  async pushAllToFirestore(payload: {
+    products?: Product[];
+    settings?: StoreSettings;
+    slides?: HeroSlide[];
+    categories?: Category[];
+  }): Promise<{ success: boolean; message: string }> {
+    if (!db) {
+      return { success: false, message: 'Firebase is not initialized' };
+    }
+    try {
+      const operations: Promise<any>[] = [];
+
+      if (payload.settings) {
+        operations.push(setDoc(doc(db, 'settings', 'general'), {
+          ...payload.settings,
+          updatedAt: new Date().toISOString()
+        }, { merge: true }));
+        operations.push(setDoc(doc(db, 'settings', 'store'), {
+          ...payload.settings,
+          updatedAt: new Date().toISOString()
+        }, { merge: true }));
+      }
+
+      if (payload.slides && payload.slides.length > 0) {
+        operations.push(setDoc(doc(db, 'content', 'heroSlides'), {
+          slides: payload.slides,
+          updatedAt: new Date().toISOString()
+        }, { merge: true }));
+      }
+
+      if (payload.products && payload.products.length > 0) {
+        // Save catalog index
+        operations.push(setDoc(doc(db, 'catalog', 'all_products'), {
+          updatedAt: new Date().toISOString(),
+          count: payload.products.length,
+          items: payload.products.slice(0, 100)
+        }, { merge: true }));
+
+        // Save top 20 custom / modified products to individual docs
+        payload.products.slice(0, 30).forEach((p) => {
+          operations.push(setDoc(doc(db, 'products', p.id), {
+            ...p,
+            updatedAt: new Date().toISOString()
+          }, { merge: true }));
+        });
+      }
+
+      await Promise.all(operations);
+      const timestamp = new Date().toISOString();
+      localStorage.setItem(STORAGE_KEYS.LAST_FIREBASE_SYNC, timestamp);
+      return { success: true, message: `Successfully synced all boutique data to Firebase Firestore at ${new Date().toLocaleTimeString()}` };
+    } catch (e: any) {
+      console.error('Firebase full push error:', e);
+      return { success: false, message: e?.message || 'Failed to sync with Firebase' };
+    }
+  },
+
   // Try fetching any remotely updated Firestore data on initialization
   async initFirestoreSync(): Promise<{
     settings?: StoreSettings;
@@ -346,8 +445,9 @@ export const StorageService = {
   }> {
     if (!db) return {};
     try {
-      const [settingsSnap, slidesSnap, catalogSnap] = await Promise.all([
+      const [settingsSnap, storeSettingsSnap, slidesSnap, catalogSnap] = await Promise.all([
         getDoc(doc(db, 'settings', 'general')).catch(() => null),
+        getDoc(doc(db, 'settings', 'store')).catch(() => null),
         getDoc(doc(db, 'content', 'heroSlides')).catch(() => null),
         getDoc(doc(db, 'catalog', 'all_products')).catch(() => null)
       ]);
@@ -358,8 +458,9 @@ export const StorageService = {
         products?: Product[];
       } = {};
 
-      if (settingsSnap && settingsSnap.exists()) {
-        const remoteSettings = settingsSnap.data() as StoreSettings;
+      const activeSettingsSnap = storeSettingsSnap?.exists() ? storeSettingsSnap : settingsSnap;
+      if (activeSettingsSnap && activeSettingsSnap.exists()) {
+        const remoteSettings = activeSettingsSnap.data() as StoreSettings;
         if (remoteSettings.brandName) {
           result.settings = remoteSettings;
           localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(remoteSettings));
@@ -374,11 +475,42 @@ export const StorageService = {
         }
       }
 
-      if (catalogSnap && catalogSnap.exists()) {
-        const remoteProducts = catalogSnap.data()?.items as Product[];
-        if (Array.isArray(remoteProducts) && remoteProducts.length > 0) {
-          result.products = remoteProducts;
-          localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(remoteProducts));
+      // Check if individual products collection has entries
+      try {
+        const productsColSnap = await getDocs(collection(db, 'products'));
+        if (!productsColSnap.empty) {
+          const remoteColProducts: Product[] = [];
+          productsColSnap.forEach(d => {
+            const data = d.data() as Product;
+            if (data && data.name && data.price) {
+              remoteColProducts.push(data);
+            }
+          });
+
+          if (remoteColProducts.length > 0) {
+            const local = this.getProducts();
+            const map = new Map<string, Product>();
+            local.forEach(p => map.set(p.id, p));
+            remoteColProducts.forEach(p => map.set(p.id, p));
+            const merged = Array.from(map.values());
+            result.products = merged;
+            localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(merged));
+          }
+        } else if (catalogSnap && catalogSnap.exists()) {
+          const remoteProducts = catalogSnap.data()?.items as Product[];
+          if (Array.isArray(remoteProducts) && remoteProducts.length > 0) {
+            result.products = remoteProducts;
+            localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(remoteProducts));
+          }
+        }
+      } catch (e) {
+        // Fallback to catalog doc
+        if (catalogSnap && catalogSnap.exists()) {
+          const remoteProducts = catalogSnap.data()?.items as Product[];
+          if (Array.isArray(remoteProducts) && remoteProducts.length > 0) {
+            result.products = remoteProducts;
+            localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(remoteProducts));
+          }
         }
       }
 
@@ -387,6 +519,10 @@ export const StorageService = {
       console.warn('Firestore initial sync notice:', e);
       return {};
     }
+  },
+
+  getLastFirebaseSync(): string | null {
+    return localStorage.getItem(STORAGE_KEYS.LAST_FIREBASE_SYNC);
   },
 
   // Admin Session

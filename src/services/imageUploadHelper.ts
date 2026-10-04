@@ -3,37 +3,42 @@
  * Optimizes images uploaded from PC for instant Firestore and local storage persistence
  */
 
+export interface ProcessedImageResult {
+  dataUrl: string;
+  fileName: string;
+  originalSizeKB: number;
+  compressedSizeKB: number;
+  dimensions: { width: number; height: number };
+}
+
 export const processImageFile = (
   file: File, 
-  maxWidth = 1200, 
+  maxWidth = 1000, 
   maxHeight = 1200, 
-  quality = 0.85
+  quality = 0.82
 ): Promise<string> => {
   return new Promise((resolve, reject) => {
     if (!file.type.startsWith('image/')) {
-      reject(new Error('Please select an image file (JPEG, PNG, WebP, etc.)'));
+      reject(new Error('Please select a valid image file (JPEG, PNG, WebP, etc.)'));
       return;
     }
 
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error('Failed to read image file'));
+    reader.onerror = () => reject(new Error('Failed to read image file from your PC'));
     reader.onload = (event) => {
       const img = new Image();
-      img.onerror = () => reject(new Error('Failed to parse image'));
+      img.onerror = () => reject(new Error('Failed to parse selected image'));
       img.onload = () => {
-        let width = img.width;
-        let height = img.height;
+        let { width, height } = img;
 
         // Maintain aspect ratio while clamping max bounds
-        if (width > maxWidth || height > maxHeight) {
-          if (width > height) {
-            height = Math.round((height * maxWidth) / width);
-            width = maxWidth;
-          } else {
-            width = Math.round((width * maxHeight) / height);
-            maxHeight = maxHeight;
-            height = maxHeight;
-          }
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+        if (height > maxHeight) {
+          width = Math.round((width * maxHeight) / height);
+          height = maxHeight;
         }
 
         const canvas = document.createElement('canvas');
@@ -42,7 +47,6 @@ export const processImageFile = (
 
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-          // Fallback to original read if canvas context fails
           resolve(event.target?.result as string);
           return;
         }
@@ -50,10 +54,19 @@ export const processImageFile = (
         // High quality smoothing
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
+
+        const isPng = file.type === 'image/png' || file.name.endsWith('.png');
+        if (!isPng) {
+          // Fill white background for JPEGs to prevent black bars
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, width, height);
+        }
+
         ctx.drawImage(img, 0, 0, width, height);
 
-        // Convert to WebP or JPEG Data URL
-        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        // For transparent logos preserve PNG, for photos use JPEG compression
+        const outputMime = isPng ? 'image/png' : 'image/jpeg';
+        const dataUrl = canvas.toDataURL(outputMime, isPng ? undefined : quality);
         resolve(dataUrl);
       };
 

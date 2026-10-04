@@ -28,7 +28,9 @@ import {
   Upload,
   Check,
   LayoutGrid,
-  List
+  List,
+  Cloud,
+  RefreshCw
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { BrandLogo } from '../../components/BrandLogo';
@@ -58,8 +60,12 @@ export const AdminDashboard: React.FC = () => {
     formatPrice, 
     setAdminStatus, 
     navigateTo, 
-    showToast 
+    showToast,
+    syncAllToFirebase,
+    lastFirebaseSync
   } = useStore();
+
+  const [isSyncingToFirebase, setIsSyncingToFirebase] = useState(false);
 
   const [activeTab, setActiveTab] = useState<'overview' | 'products' | 'slides' | 'orders' | 'categories' | 'coupons' | 'reviews' | 'settings'>('overview');
 
@@ -90,6 +96,8 @@ export const AdminDashboard: React.FC = () => {
     material: 'Pure Korean Nida',
     color: 'Noir Black',
     imageUrl: DUBAI_IMAGE,
+    imageUrl2: '',
+    imageUrl3: '',
     isFlashSale: false,
     isNewArrival: true
   });
@@ -173,7 +181,14 @@ export const AdminDashboard: React.FC = () => {
     const priceVal = Number(productForm.price);
     const oldPriceVal = discountVal > 0 ? Math.round(priceVal * (1 + discountVal / 100)) : undefined;
 
+    const images: string[] = [productForm.imageUrl];
+    if (productForm.imageUrl2?.trim()) images.push(productForm.imageUrl2.trim());
+    if (productForm.imageUrl3?.trim()) images.push(productForm.imageUrl3.trim());
+
     if (editingProduct) {
+      if (images.length === 1 && editingProduct.images.length > 1) {
+        images.push(...editingProduct.images.slice(1));
+      }
       updateProduct(editingProduct.id, {
         name: productForm.name,
         category: productForm.category,
@@ -185,7 +200,8 @@ export const AdminDashboard: React.FC = () => {
         stock: Number(productForm.stock),
         material: productForm.material,
         color: productForm.color,
-        images: [productForm.imageUrl, ...editingProduct.images.slice(1)],
+        images,
+        gallery: images,
         isFlashSale: productForm.isFlashSale,
         isNewArrival: productForm.isNewArrival
       });
@@ -200,8 +216,8 @@ export const AdminDashboard: React.FC = () => {
         discount: discountVal > 0 ? discountVal : undefined,
         oldPrice: oldPriceVal,
         stock: Number(productForm.stock),
-        images: [productForm.imageUrl],
-        gallery: [productForm.imageUrl],
+        images,
+        gallery: images,
         color: productForm.color,
         availableColors: [productForm.color, 'Noir Black', 'Emerald Green'],
         size: ['50', '52', '54', '56', '58', '60'],
@@ -228,6 +244,8 @@ export const AdminDashboard: React.FC = () => {
       material: 'Pure Korean Nida',
       color: 'Noir Black',
       imageUrl: DUBAI_IMAGE,
+      imageUrl2: '',
+      imageUrl3: '',
       isFlashSale: false,
       isNewArrival: true
     });
@@ -246,6 +264,8 @@ export const AdminDashboard: React.FC = () => {
       material: p.material,
       color: p.color,
       imageUrl: p.images[0] || DUBAI_IMAGE,
+      imageUrl2: p.images[1] || '',
+      imageUrl3: p.images[2] || '',
       isFlashSale: !!p.isFlashSale,
       isNewArrival: !!p.isNewArrival
     });
@@ -371,10 +391,27 @@ export const AdminDashboard: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2 sm:gap-4">
-          {/* Firebase Real-Time Cloud Sync Indicator */}
-          <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-[11px] text-emerald-300 font-mono shadow-inner">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Firebase Firestore: Auto-Sync Active</span>
+          {/* Firebase Real-Time Cloud Sync Indicator & Action Button */}
+          <div className="flex items-center gap-2">
+            <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-[11px] text-emerald-300 font-mono shadow-inner">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>Firebase: Connected</span>
+            </div>
+
+            <button
+              onClick={async () => {
+                setIsSyncingToFirebase(true);
+                await syncAllToFirebase();
+                setIsSyncingToFirebase(false);
+              }}
+              disabled={isSyncingToFirebase}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-900/90 hover:bg-emerald-800 border border-emerald-400/50 text-[11px] text-emerald-200 font-semibold shadow transition-all active:scale-95 cursor-pointer"
+              title="Force push all products, banners, and settings to Firebase Firestore"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-[#D4AF37] ${isSyncingToFirebase ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">{isSyncingToFirebase ? 'Syncing...' : 'Sync to Firebase'}</span>
+              <span className="sm:hidden">Firebase</span>
+            </button>
           </div>
 
           <button
@@ -485,23 +522,27 @@ export const AdminDashboard: React.FC = () => {
                     </span>
                   </div>
                   <p className="text-xs text-neutral-200 mt-0.5">
-                    All abayas, stoles, pins, hero banners, texts, pictures, settings, and WhatsApp orders are automatically saved to Firebase.
+                    All abayas, stoles, pins, hero banners, texts, pictures uploaded from PC, settings, and WhatsApp orders are automatically saved to Firebase.
                   </p>
+                  {lastFirebaseSync && (
+                    <span className="text-[10px] text-emerald-300 font-mono mt-1 block">
+                      Last synchronized: {new Date(lastFirebaseSync).toLocaleTimeString()} ({new Date(lastFirebaseSync).toLocaleDateString()})
+                    </span>
+                  )}
                 </div>
               </div>
 
               <button
                 onClick={async () => {
-                  showToast('Syncing all catalog & content with Firebase Cloud...');
-                  await StorageService.syncProductsToFirestore(products);
-                  StorageService.saveHeroSlides(heroSlides);
-                  StorageService.saveSettings(settings);
-                  showToast('Firebase Cloud Sync Completed successfully!');
+                  setIsSyncingToFirebase(true);
+                  await syncAllToFirebase();
+                  setIsSyncingToFirebase(false);
                 }}
-                className="px-4 py-2 bg-[#D4AF37] hover:bg-[#b8952b] text-neutral-950 text-xs font-bold uppercase tracking-wider rounded-md transition-all shadow flex items-center gap-1.5 shrink-0"
+                disabled={isSyncingToFirebase}
+                className="px-4 py-2 bg-[#D4AF37] hover:bg-[#b8952b] text-neutral-950 text-xs font-bold uppercase tracking-wider rounded-md transition-all shadow flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95"
               >
-                <Check className="w-4 h-4" />
-                <span>Sync to Firebase</span>
+                <RefreshCw className={`w-4 h-4 ${isSyncingToFirebase ? 'animate-spin' : ''}`} />
+                <span>{isSyncingToFirebase ? 'Syncing...' : 'Sync All to Firebase'}</span>
               </button>
             </div>
 
@@ -1410,19 +1451,42 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </div>
 
-              <ImageUploadField
-                label="Abaya Photo (Direct Upload from PC or Web URL)"
-                value={productForm.imageUrl}
-                onChange={(url) => setProductForm({ ...productForm, imageUrl: url })}
-                aspectRatio="portrait"
-                presets={[
-                  { label: 'Dubai Silk', img: DUBAI_IMAGE },
-                  { label: 'Saudi Obsidian', img: HERO_IMAGE },
-                  { label: 'Kimono Crepe', img: KIMONO_IMAGE },
-                  { label: 'Atelier Gold', img: ATELIER_IMAGE }
-                ]}
-                helperText="Upload any picture directly from your PC / computer or paste an image URL. Automatically synced to Firebase Firestore."
-              />
+              <div className="space-y-3 bg-[#FAF7F0] p-3 rounded-lg border border-neutral-200">
+                <div className="font-semibold text-neutral-800 text-xs flex items-center justify-between">
+                  <span>Product Photography (Direct Upload from PC or URL)</span>
+                  <span className="text-[10px] text-[#006B5B] font-mono">Synced to Firebase</span>
+                </div>
+
+                <ImageUploadField
+                  label="1. Primary Front Photo (Required)"
+                  value={productForm.imageUrl}
+                  onChange={(url) => setProductForm({ ...productForm, imageUrl: url })}
+                  aspectRatio="portrait"
+                  presets={[
+                    { label: 'Dubai Silk', img: DUBAI_IMAGE },
+                    { label: 'Saudi Obsidian', img: HERO_IMAGE },
+                    { label: 'Kimono Crepe', img: KIMONO_IMAGE },
+                    { label: 'Atelier Gold', img: ATELIER_IMAGE }
+                  ]}
+                  helperText="Upload main garment photo directly from your PC or select a preset."
+                />
+
+                <ImageUploadField
+                  label="2. Back Angle / Silhouette (Optional)"
+                  value={productForm.imageUrl2}
+                  onChange={(url) => setProductForm({ ...productForm, imageUrl2: url })}
+                  aspectRatio="portrait"
+                  helperText="Upload rear or alternate angle directly from your PC."
+                />
+
+                <ImageUploadField
+                  label="3. Fabric Texture / Embroidered Detail (Optional)"
+                  value={productForm.imageUrl3}
+                  onChange={(url) => setProductForm({ ...productForm, imageUrl3: url })}
+                  aspectRatio="portrait"
+                  helperText="Upload close-up fabric texture or sleeve embroidery directly from your PC."
+                />
+              </div>
 
               <div className="flex items-center gap-6 pt-2">
                 <label className="flex items-center gap-2 cursor-pointer">

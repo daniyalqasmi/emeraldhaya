@@ -107,6 +107,10 @@ interface StoreContextType {
   setSearchQuery: (query: string) => void;
   selectedCategoryFilter: string;
   setSelectedCategoryFilter: (cat: string) => void;
+
+  // Firebase Cloud Synchronization
+  syncAllToFirebase: () => Promise<{ success: boolean; message: string }>;
+  lastFirebaseSync: string | null;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -301,21 +305,27 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const updated = [newProduct, ...products];
     setProducts(updated);
     StorageService.saveProducts(updated);
-    showToast(`Added "${newProduct.name}" to boutique catalog`);
+    StorageService.saveSingleProductToFirestore(newProduct);
+    showToast(`Added "${newProduct.name}" to boutique catalog & saved to Firebase`);
   };
 
   const updateProduct = (id: string, updates: Partial<Product>) => {
     const updated = products.map((p) => (p.id === id ? { ...p, ...updates } : p));
     setProducts(updated);
     StorageService.saveProducts(updated);
-    showToast('Product updated successfully');
+    const updatedProduct = updated.find((p) => p.id === id);
+    if (updatedProduct) {
+      StorageService.saveSingleProductToFirestore(updatedProduct);
+    }
+    showToast('Product updated successfully & saved to Firebase');
   };
 
   const deleteProduct = (id: string) => {
     const updated = products.filter((p) => p.id !== id);
     setProducts(updated);
     StorageService.saveProducts(updated);
-    showToast('Product removed from catalog', 'info');
+    StorageService.deleteProductFromFirestore(id);
+    showToast('Product removed from catalog & Firebase', 'info');
   };
 
   const resetProductsToDefault = () => {
@@ -594,6 +604,25 @@ Kindly confirm availability and atelier dispatch timeline. Thank you!`;
     setIsAdmin(status);
   };
 
+  // Firebase Manual Sync & Status
+  const [lastFirebaseSync, setLastFirebaseSync] = useState<string | null>(StorageService.getLastFirebaseSync());
+
+  const syncAllToFirebase = async () => {
+    const res = await StorageService.pushAllToFirestore({
+      products,
+      settings,
+      slides: heroSlides,
+      categories
+    });
+    if (res.success) {
+      setLastFirebaseSync(new Date().toISOString());
+      showToast('All products and website settings synced to Firebase Firestore!', 'success');
+    } else {
+      showToast(res.message, 'error');
+    }
+    return res;
+  };
+
   return (
     <StoreContext.Provider
       value={{
@@ -649,7 +678,9 @@ Kindly confirm availability and atelier dispatch timeline. Thank you!`;
         searchQuery,
         setSearchQuery,
         selectedCategoryFilter,
-        setSelectedCategoryFilter
+        setSelectedCategoryFilter,
+        syncAllToFirebase,
+        lastFirebaseSync
       }}
     >
       {children}

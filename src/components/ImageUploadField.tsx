@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Upload, Image as ImageIcon, Link as LinkIcon, X, Check, Sparkles } from 'lucide-react';
+import { Upload, Image as ImageIcon, Link as LinkIcon, X, Check, FileCheck, RefreshCw } from 'lucide-react';
 import { processImageFile } from '../services/imageUploadHelper';
 
 interface ImageUploadFieldProps {
@@ -22,16 +22,18 @@ export const ImageUploadField: React.FC<ImageUploadFieldProps> = ({
   const [mode, setMode] = useState<'upload' | 'url'>('upload');
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = async (file: File) => {
     setErrorMsg(null);
     setIsProcessing(true);
+    setUploadedFileName(file.name);
     try {
-      const maxWidth = aspectRatio === 'landscape' ? 1400 : 1000;
-      const maxHeight = aspectRatio === 'landscape' ? 900 : 1300;
-      const dataUrl = await processImageFile(file, maxWidth, maxHeight, 0.85);
+      const maxWidth = aspectRatio === 'landscape' ? 1200 : aspectRatio === 'square' ? 600 : 800;
+      const maxHeight = aspectRatio === 'landscape' ? 700 : aspectRatio === 'square' ? 600 : 1050;
+      const dataUrl = await processImageFile(file, maxWidth, maxHeight, 0.82);
       onChange(dataUrl);
     } catch (err: any) {
       setErrorMsg(err?.message || 'Failed to process image file');
@@ -64,6 +66,17 @@ export const ImageUploadField: React.FC<ImageUploadFieldProps> = ({
   const handleDragLeave = () => {
     setIsDragging(false);
   };
+
+  const handleClear = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onChange('');
+    setUploadedFileName(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const isDataUrl = value?.startsWith('data:image/');
 
   return (
     <div className="space-y-2">
@@ -107,7 +120,7 @@ export const ImageUploadField: React.FC<ImageUploadFieldProps> = ({
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onClick={() => fileInputRef.current?.click()}
-          className={`border-2 border-dashed rounded-lg p-3 sm:p-4 transition-all cursor-pointer flex flex-col sm:flex-row items-center gap-3 relative ${
+          className={`border-2 border-dashed rounded-lg p-3 sm:p-4 transition-all cursor-pointer flex flex-col sm:flex-row items-center gap-3 relative group ${
             isDragging 
               ? 'border-[#006B5B] bg-emerald-50/70 scale-[1.01]' 
               : 'border-neutral-300 hover:border-[#006B5B] bg-[#FAF7F0]/60'
@@ -122,8 +135,8 @@ export const ImageUploadField: React.FC<ImageUploadFieldProps> = ({
           />
 
           {/* Current Preview Thumbnail */}
-          <div className={`shrink-0 rounded overflow-hidden bg-neutral-200 border border-neutral-300 relative shadow-inner ${
-            aspectRatio === 'landscape' ? 'w-24 h-14 sm:w-28 sm:h-16' : 'w-14 h-18 sm:w-16 sm:h-20'
+          <div className={`shrink-0 rounded overflow-hidden bg-neutral-200 border border-neutral-300 relative shadow-inner flex items-center justify-center ${
+            aspectRatio === 'landscape' ? 'w-24 h-14 sm:w-28 sm:h-16' : aspectRatio === 'square' ? 'w-16 h-16 sm:w-20 sm:h-20' : 'w-14 h-18 sm:w-16 sm:h-20'
           }`}>
             {value ? (
               <img
@@ -136,12 +149,12 @@ export const ImageUploadField: React.FC<ImageUploadFieldProps> = ({
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-neutral-400">
-                <ImageIcon className="w-5 h-5" />
+                <ImageIcon className="w-6 h-6" />
               </div>
             )}
             {isProcessing && (
               <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-white text-[10px] font-bold">
-                Processing...
+                <RefreshCw className="w-4 h-4 animate-spin text-[#D4AF37]" />
               </div>
             )}
           </div>
@@ -150,19 +163,40 @@ export const ImageUploadField: React.FC<ImageUploadFieldProps> = ({
           <div className="flex-1 text-center sm:text-left min-w-0">
             <div className="flex items-center justify-center sm:justify-start gap-1.5 text-xs font-bold text-[#006B5B]">
               <Upload className="w-4 h-4 shrink-0" />
-              <span>Click to choose photo from PC</span>
+              <span>{value ? 'Click or drag to replace photo from PC' : 'Click to select photo from PC / Computer'}</span>
             </div>
-            <p className="text-[11px] text-neutral-500 mt-0.5">
-              Supports JPEG, PNG, WebP (auto-optimized & saved to Firebase)
-            </p>
+            {uploadedFileName ? (
+              <p className="text-[11px] text-emerald-800 font-medium flex items-center justify-center sm:justify-start gap-1 mt-0.5">
+                <FileCheck className="w-3 h-3 text-[#006B5B]" />
+                <span className="truncate">{uploadedFileName}</span>
+                {isDataUrl && <span className="text-[10px] text-neutral-400">(Auto-optimized)</span>}
+              </p>
+            ) : (
+              <p className="text-[11px] text-neutral-500 mt-0.5">
+                JPEG, PNG, WebP supported. Direct upload stored in Firebase.
+              </p>
+            )}
           </div>
 
-          <button
-            type="button"
-            className="px-3 py-1.5 bg-[#006B5B] hover:bg-[#01453D] text-white text-[11px] font-bold rounded uppercase tracking-wider shrink-0 shadow-xs pointer-events-none"
-          >
-            Browse PC
-          </button>
+          {/* Action Buttons */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              className="px-3 py-1.5 bg-[#006B5B] hover:bg-[#01453D] text-white text-[11px] font-bold rounded uppercase tracking-wider shadow-xs pointer-events-none"
+            >
+              Browse PC
+            </button>
+            {value && (
+              <button
+                type="button"
+                onClick={handleClear}
+                className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
+                title="Remove photo"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
         </div>
       ) : (
         /* Direct URL input fallback */
@@ -178,8 +212,16 @@ export const ImageUploadField: React.FC<ImageUploadFieldProps> = ({
             />
           </div>
           {value && (
-            <div className="w-10 h-10 rounded border bg-neutral-100 overflow-hidden shrink-0 shadow-inner">
+            <div className="w-10 h-10 rounded border bg-neutral-100 overflow-hidden shrink-0 shadow-inner relative">
               <img src={value} alt="" className="w-full h-full object-cover" />
+              <button
+                type="button"
+                onClick={handleClear}
+                className="absolute top-0 right-0 bg-black/60 text-white p-0.5 rounded-bl hover:bg-rose-600"
+                title="Clear"
+              >
+                <X className="w-3 h-3" />
+              </button>
             </div>
           )}
         </div>
@@ -202,7 +244,10 @@ export const ImageUploadField: React.FC<ImageUploadFieldProps> = ({
             <button
               key={preset.label}
               type="button"
-              onClick={() => onChange(preset.img)}
+              onClick={() => {
+                onChange(preset.img);
+                setUploadedFileName(preset.label);
+              }}
               className={`px-2 py-0.5 text-[10px] rounded border transition-colors flex items-center gap-1 ${
                 value === preset.img
                   ? 'bg-[#006B5B] text-white border-[#006B5B] font-bold'
@@ -217,7 +262,7 @@ export const ImageUploadField: React.FC<ImageUploadFieldProps> = ({
       )}
 
       {helperText && (
-        <span className="text-[10px] text-neutral-400 block">
+        <span className="text-[10px] text-neutral-500 block leading-tight">
           {helperText}
         </span>
       )}
